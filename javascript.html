@@ -1,0 +1,207 @@
+<script>
+let allBays = [];
+let allFeatures = [];
+let selectedBayId = '';
+let selectedBayName = '';
+let featureSelections = {}; // featureSelections[optionId] = 'RED'|'YELLOW'|'GREEN' or ''
+
+document.addEventListener('DOMContentLoaded', function() {
+  // 1) Load all bays + features from server
+  google.script.run
+    .withSuccessHandler(renderBaySelector)
+    .withFailureHandler(err => {
+      document.getElementById('app').innerHTML =
+        '<p style="color:red;">Error: ' + err.message + '</p>';
+    })
+    .getBaysAndOptions();
+});
+
+/**
+ * renderBaySelector(data)
+ * - data.bays[] => array of { bayId, bayName, location }
+ * - data.features[] => array of { optionId, optionName }
+ */
+function renderBaySelector(data) {
+  const appDiv = document.getElementById('app');
+
+  if (!data.success) {
+    appDiv.innerHTML = `<p style="color:red;">${data.error}</p>`;
+    return;
+  }
+
+  allBays = data.bays;
+  allFeatures = data.features;
+
+  // Build a dropdown for bay selection
+  let html = `
+    <div class="label">Select Bay:</div>
+    <select id="baySelect" class="select-input" onchange="handleBayChange()">
+      <option value="">-- Choose a Bay --</option>
+  `;
+  allBays.forEach(b => {
+    html += `<option value="${b.bayId}">${b.bayName} (${b.location})</option>`;
+  });
+  html += `</select>`;
+
+  // Once user picks a bay, we show the inspector fields + features
+  html += `<div id="bayDetails"></div>`;
+
+  appDiv.innerHTML = html;
+}
+
+/**
+ * handleBayChange() - called when user picks a bay from dropdown
+ */
+function handleBayChange() {
+  const bayId = document.getElementById('baySelect').value;
+  const bayDetailsDiv = document.getElementById('bayDetails');
+  bayDetailsDiv.innerHTML = '';
+
+  if (!bayId) {
+    // no selection
+    return;
+  }
+
+  // find the selected bay
+  const bay = allBays.find(b => b.bayId.toString() === bayId.toString());
+  if (!bay) return;
+
+  selectedBayId = bay.bayId;
+  selectedBayName = bay.bayName;
+
+  // Build the kiosk fields
+  let html = `
+    <div class="label">Inspector:</div>
+    <input type="text" id="inspector" class="text-input" placeholder="Your name...">
+
+    <div class="label">Phone:</div>
+    <input type="text" id="phone" class="text-input" placeholder="Your phone...">
+
+    <div class="label">Notes:</div>
+    <textarea id="notes" class="textarea-input" placeholder="Any extra details..."></textarea>
+  `;
+
+  if (allFeatures.length > 0) {
+    html += `<div class="label" style="margin-top:1rem;">Check Each Feature:</div>`;
+    allFeatures.forEach(opt => {
+      featureSelections[opt.optionId] = ''; // reset
+      html += `
+        <div class="feature-row">
+          <div class="feature-name">${opt.optionName}</div>
+          <div class="feature-buttons">
+            <button
+              class="feature-btn"
+              id="btn-${opt.optionId}-red"
+              onclick="setFeatureStatus('${opt.optionId}','RED','${opt.optionName}')"
+            >Broken</button>
+            <button
+              class="feature-btn"
+              id="btn-${opt.optionId}-yellow"
+              onclick="setFeatureStatus('${opt.optionId}','YELLOW','${opt.optionName}')"
+            >Needs Attn</button>
+            <button
+              class="feature-btn"
+              id="btn-${opt.optionId}-green"
+              onclick="setFeatureStatus('${opt.optionId}','GREEN','${opt.optionName}')"
+            >Working</button>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  html += `
+    <button class="submit-btn" onclick="showOverlay()">Submit</button>
+  `;
+
+  bayDetailsDiv.innerHTML = html;
+}
+
+/**
+ * setFeatureStatus(optionId, color, optionName)
+ */
+function setFeatureStatus(optionId, color, optionName) {
+  // store selection
+  featureSelections[optionId] = color;
+
+  // reset button states
+  const redBtn    = document.getElementById(`btn-${optionId}-red`);
+  const yellowBtn = document.getElementById(`btn-${optionId}-yellow`);
+  const greenBtn  = document.getElementById(`btn-${optionId}-green`);
+
+  redBtn.className = 'feature-btn';
+  redBtn.textContent = 'Broken';
+  yellowBtn.className = 'feature-btn';
+  yellowBtn.textContent = 'Needs Attn';
+  greenBtn.className = 'feature-btn';
+  greenBtn.textContent = 'Working';
+
+  // apply selected style + small emoji
+  if (color === 'RED') {
+    redBtn.classList.add('red-selected');
+    redBtn.textContent = 'Broken ❌';
+  } else if (color === 'YELLOW') {
+    yellowBtn.classList.add('yellow-selected');
+    yellowBtn.textContent = 'Needs Attn ⚠️';
+  } else if (color === 'GREEN') {
+    greenBtn.classList.add('green-selected');
+    greenBtn.textContent = 'Working ✅';
+  }
+}
+
+/**
+ * showOverlay() - show confirmation modal
+ */
+function showOverlay() {
+  // Only proceed if user selected a bay
+  if (!selectedBayId) {
+    alert('Please select a Bay first.');
+    return;
+  }
+  document.getElementById('confirmOverlay').style.display = 'flex';
+}
+
+/**
+ * closeOverlay() - hide confirmation modal
+ */
+function closeOverlay() {
+  document.getElementById('confirmOverlay').style.display = 'none';
+}
+
+/**
+ * finalizeSubmission() - gather data + call updateBayFeatures
+ */
+function finalizeSubmission() {
+  closeOverlay();
+
+  const inspector = document.getElementById('inspector').value || '';
+  const phone = document.getElementById('phone').value || '';
+  const notes = document.getElementById('notes').value || '';
+
+  // Convert featureSelections to array of {optionId, optionName, status}
+  const featureArray = [];
+  allFeatures.forEach(opt => {
+    const status = featureSelections[opt.optionId] || '';
+    if (status) {
+      featureArray.push({
+        optionId: opt.optionId,
+        optionName: opt.optionName,
+        status: status
+      });
+    }
+  });
+
+  google.script.run
+    .withSuccessHandler(resp => {
+      if (resp.success) {
+        alert('Submitted!\n' + resp.message);
+      } else {
+        alert('Submission failed: ' + resp.message);
+      }
+    })
+    .withFailureHandler(err => {
+      alert('Error: ' + err.message);
+    })
+    .updateBayFeatures(selectedBayId, selectedBayName, inspector, phone, notes, featureArray);
+}
+</script>
