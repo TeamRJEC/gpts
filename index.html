@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <?!= include('stylesheet'); ?>
+  </head>
+  <body>
+    <header class="app-header">
+      <h1 class="app-title">Car Wash Kiosk</h1>
+    </header>
+
+    <div class="container">
+      <div id="app" class="card">Loading data...</div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="overlay" id="confirmOverlay">
+      <div class="overlay-content">
+        <h2>Confirm Submission</h2>
+        <p id="confirmMessage">Are you sure you want to submit?</p>
+        <div class="overlay-buttons">
+          <button class="overlay-btn" onclick="closeOverlay()">Cancel</button>
+          <button class="overlay-btn primary" onclick="finalizeSubmission()">Submit</button>
+        </div>
+      </div>
+    </div>
+
+    <?!= include('javascript'); ?>
+  </body>
+</html>
